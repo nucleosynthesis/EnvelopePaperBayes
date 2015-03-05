@@ -35,7 +35,7 @@ void quickTest(){
   RooGaussian sig_pdf("gaus","gaus",*x,mean,sigma);
   
   // Should add this to the RooWorkspace
-  RooRealVar nbkg("nbkg","nbkg",datatoy->sumEntries(),0,1000);
+  RooRealVar nbkg("nbkg","nbkg",datatoy->sumEntries(),0,10000);
 
   RooRealVar mu("r","r",1,0,5);
   RooFormulaVar nsig("nsig","nsig","@0*@1",RooArgList(mu,nsignal_const));
@@ -44,61 +44,56 @@ void quickTest(){
  // start wih a model !
   RooAbsPdf *bkg_pdf = multipdf->pdf("env_pdf_1_8TeV_pow1");
   RooAddPdf spdf_a("Asplusb","Asplusb",RooArgList(sig_pdf,*bkg_pdf),RooArgList(nsig,nbkg));
-  //RooAddPdf spdf("Asplusb","Asplusb",RooArgList(sig_pdf,*bkg_pdf),RooArgList(nsig,nbkg));
-
-
-  // make priors
- // multipdf->factory("Uniform::prior_mu(mu,0,10)");
- // multipdf->factory("Uniform::prior_nbkg(nbkg,0,10000)");
- // multipdf->factory("Uniform::prior_par(env_pdf_1_8TeV_pow1_p1,-10,1)");
-//  multipdf->factory("Uniform::prior_mu");
-//  multipdf->factory("Uniform::prior_nbkg");
-//  multipdf->factory("Uniform::prior_par");
-  RooUniform uniform_nbkg("p_nbkg","p_nbkg",nbkg);
-  RooUniform uniform_par("p_par","p_nbkg",*(multipdf->var("env_pdf_1_8TeV_pow1_p1")));
-  RooUniform uniform_mu("p_mu","p_nbkg",mu);
-  multipdf->var("env_pdf_1_8TeV_pow1_p1")->setMin(-6);
-  multipdf->var("env_pdf_1_8TeV_pow1_p1")->setMax(-2);
-  multipdf->Print();
-
-  //multipdf->factory("PROD::priorpdf(prior_nbkg,prior_par)");
-  RooProdPdf prior_pdf("prior_nuis","nuisance prior",RooArgList(uniform_nbkg,uniform_par));
-  //RooProdPdf prior_pdf("prior_nuis","nuisance prior",RooArgList(uniform_nbkg));
-
-  RooProdPdf spdf("splusb","splusb",RooArgList(spdf_a,prior_pdf));
-  //multipdf->import(spdf,RooFit::RecycleConflictNodes());
+  // start someplace reasonable
   spdf_a.fitTo(*datatoy);
   RooPlot *pl1 = x->frame();
   datatoy->plotOn(pl1);
   spdf_a.plotOn(pl1);
-   pl1->Draw();
+  pl1->Draw();
 
-  TCanvas *can = new TCanvas();
+  RooWorkspace *wsp = new RooWorkspace("NewWorkspace");
+
+  wsp->import(spdf_a,RooFit::RecycleConflictNodes());
+  // Now start messing around with the parameters
+  wsp->var("env_pdf_1_8TeV_pow1_p1")->setMin(wsp->var("env_pdf_1_8TeV_pow1_p1")->getVal()-4*wsp->var("env_pdf_1_8TeV_pow1_p1")->getError());
+  wsp->var("env_pdf_1_8TeV_pow1_p1")->setMax(wsp->var("env_pdf_1_8TeV_pow1_p1")->getVal()+4*wsp->var("env_pdf_1_8TeV_pow1_p1")->getError());
+  wsp->var("nbkg")->setMin(wsp->var("nbkg")->getVal()-4*wsp->var("nbkg")->getError());
+  wsp->var("nbkg")->setMax(wsp->var("nbkg")->getVal()+4*wsp->var("nbkg")->getError());
+
+  // Prior for signal strength + nuisances 
+  RooUniform uniform_mu("p_mu","p_nbkg",RooArgSet(*(wsp->var(mu.GetName()))));
+
   // Nuisance parameters will be background parameters
   RooArgSet nuisances(*(bkg_pdf->getParameters(*datatoy)));
-  nuisances.add(nbkg);
-  nuisances.Print("V");
+  nuisances.add(*(wsp->var(nbkg.GetName())));
+  RooUniform prior_pdf("prior_nuis","nuisance prior",nuisances);
 
-//  multipdf->pdf("prior_mu")->Print();
- datatoy->Print();
-spdf.Print();
-mu.Print();
-uniform_mu.Print();
+  // PDF is usual s+b pdf * constraint (priors)
+  RooProdPdf spdf("splusb","splusb",RooArgList(spdf_a,prior_pdf));
+  wsp->import(spdf,RooFit::RecycleConflictNodes());
 
-  RooArgSet poi(mu);
+  // Model Config 
+  RooArgSet poi(*(wsp->var(mu.GetName())));
 
-  RooStats::ModelConfig mc("mc","mc",multipdf);
-  mc.SetPdf(spdf);
+  RooStats::ModelConfig mc("mc","mc",wsp);
+  mc.SetObservables(RooArgSet(*x));
+  mc.SetPdf(*(wsp->pdf(spdf.GetName())));
   mc.SetPriorPdf(uniform_mu);
+  mc.SetNuisanceParameters(nuisances);
+  mc.SetParametersOfInterest(poi);
+  mc.SetGlobalObservables(RooArgSet());
 
-  //RooStats::BayesianCalculator bc(*datatoy,spdf,poi,uniform_mu,(&nuisances));
-  //bc.Print("v");
-  //bc.SetConfidenceLevel(0.683);
-  //RooAbsPdf * posterior = bc.GetPosteriorPdf();
-  //RooPlot *pl =  bc.GetPosteriorPlot() ;//mu.frame();
-//  posterior->plotOn(pl);
-  RooStats::MCMCCalculator MCMC(*data,mc);
-  MCMC.
+  mc.Print("v");
 
- pl->Draw();
+  RooStats::BayesianCalculator bc(*datatoy,mc);
+  bc.SetConfidenceLevel(0.683);
+  bc.SetScanOfPosterior(50);
+  bc.SetIntegrationType("MISER");
+  RooAbsReal *pdfpost =  bc.GetPosteriorFunction();
+  pdfpost->Print("vT");
+//  spdf.Print("v");
+
+  RooPlot * plot = bc.GetPosteriorPlot();
+  TCanvas *can = new TCanvas();
+  plot->Draw();
 }
