@@ -3,6 +3,7 @@
 #include "RooRealVar.h"
 #include "RooFormulaVar.h"
 #include "RooAbsPdf.h"
+#include "RooAbsArg.h"
 #include "RooProdPdf.h"
 #include "RooAddPdf.h"
 #include "RooWorkspace.h"
@@ -15,6 +16,18 @@
 #include "TCanvas.h"
 
 using namespace RooStats;
+
+void setParsRanges(RooArgSet *pars, int ns){
+   TIterator *it = pars->createIterator();
+   RooAbsArg *aarg;
+   while (aarg = (RooAbsArg*)it->Next()) { 
+	RooRealVar *arg = dynamic_cast<RooRealVar*>(aarg);
+	arg->setMax(arg->getVal()+ns*arg->getError());
+	arg->setMin(arg->getVal()-ns*arg->getError());
+   }
+
+}
+
 void quickTest(){
 
   //gROOT->SetBatch(1);
@@ -40,60 +53,71 @@ void quickTest(){
   RooRealVar mu("r","r",1,0,5);
   RooFormulaVar nsig("nsig","nsig","@0*@1",RooArgList(mu,nsignal_const));
   //mu.setConstant();
+  RooPlot *plot = mu.frame();
 
- // start wih a model !
-  RooAbsPdf *bkg_pdf = multipdf->pdf("env_pdf_1_8TeV_pow1");
-  RooAddPdf spdf_a("Asplusb","Asplusb",RooArgList(sig_pdf,*bkg_pdf),RooArgList(nsig,nbkg));
-  // start someplace reasonable
-  spdf_a.fitTo(*datatoy);
-  RooPlot *pl1 = x->frame();
-  datatoy->plotOn(pl1);
-  spdf_a.plotOn(pl1);
-  pl1->Draw();
+  std::string bkgfunctions[2] = {"env_pdf_1_8TeV_pow1","env_pdf_1_8TeV_exp1"};
+  int color[2] = {4,2};
 
-  RooWorkspace *wsp = new RooWorkspace("NewWorkspace");
+  for (int id=0;id<2;id++){
 
-  wsp->import(spdf_a,RooFit::RecycleConflictNodes());
-  // Now start messing around with the parameters
-  wsp->var("env_pdf_1_8TeV_pow1_p1")->setMin(wsp->var("env_pdf_1_8TeV_pow1_p1")->getVal()-4*wsp->var("env_pdf_1_8TeV_pow1_p1")->getError());
-  wsp->var("env_pdf_1_8TeV_pow1_p1")->setMax(wsp->var("env_pdf_1_8TeV_pow1_p1")->getVal()+4*wsp->var("env_pdf_1_8TeV_pow1_p1")->getError());
-  wsp->var("nbkg")->setMin(wsp->var("nbkg")->getVal()-4*wsp->var("nbkg")->getError());
-  wsp->var("nbkg")->setMax(wsp->var("nbkg")->getVal()+4*wsp->var("nbkg")->getError());
+  // start wih a model !
+   RooAbsPdf *bkg_pdf = multipdf->pdf(bkgfunctions[id].c_str());
+   RooAddPdf spdf_a("Asplusb","Asplusb",RooArgList(sig_pdf,*bkg_pdf),RooArgList(nsig,nbkg));
 
-  // Prior for signal strength + nuisances 
-  RooUniform uniform_mu("p_mu","p_nbkg",RooArgSet(*(wsp->var(mu.GetName()))));
+   // start someplace reasonable
+   spdf_a.fitTo(*datatoy);
+   //RooPlot *pl1 = x->frame();
+   //datatoy->plotOn(pl1);
+   //spdf_a.plotOn(pl1);
+   //pl1->Draw();
 
-  // Nuisance parameters will be background parameters
-  RooArgSet nuisances(*(bkg_pdf->getParameters(*datatoy)));
-  nuisances.add(*(wsp->var(nbkg.GetName())));
-  RooUniform prior_pdf("prior_nuis","nuisance prior",nuisances);
+   RooWorkspace *wsp = new RooWorkspace("NewWorkspace");
 
-  // PDF is usual s+b pdf * constraint (priors)
-  RooProdPdf spdf("splusb","splusb",RooArgList(spdf_a,prior_pdf));
-  wsp->import(spdf,RooFit::RecycleConflictNodes());
+   wsp->import(spdf_a,RooFit::RecycleConflictNodes());
+   // Now start messing around with the parameters
+   int nsigma = 4;
+   setParsRanges(bkg_pdf->getParameters(*datatoy),4);
+   //wsp->var("env_pdf_1_8TeV_pow1_p1")->setMin(wsp->var("env_pdf_1_8TeV_pow1_p1")->getVal()-4*wsp->var("env_pdf_1_8TeV_pow1_p1")->getError());
+   //wsp->var("env_pdf_1_8TeV_pow1_p1")->setMax(wsp->var("env_pdf_1_8TeV_pow1_p1")->getVal()+4*wsp->var("env_pdf_1_8TeV_pow1_p1")->getError());
+   wsp->var("nbkg")->setMin(wsp->var("nbkg")->getVal()-nsigma*wsp->var("nbkg")->getError());
+   wsp->var("nbkg")->setMax(wsp->var("nbkg")->getVal()+nsigma*wsp->var("nbkg")->getError());
 
-  // Model Config 
-  RooArgSet poi(*(wsp->var(mu.GetName())));
+   // Prior for signal strength + nuisances 
+   RooUniform uniform_mu("p_mu","p_nbkg",RooArgSet(*(wsp->var(mu.GetName()))));
 
-  RooStats::ModelConfig mc("mc","mc",wsp);
-  mc.SetObservables(RooArgSet(*x));
-  mc.SetPdf(*(wsp->pdf(spdf.GetName())));
-  mc.SetPriorPdf(uniform_mu);
-  mc.SetNuisanceParameters(nuisances);
-  mc.SetParametersOfInterest(poi);
-  mc.SetGlobalObservables(RooArgSet());
+   // Nuisance parameters will be background parameters
+   RooArgSet nuisances(*(bkg_pdf->getParameters(*datatoy)));
+   nuisances.add(*(wsp->var(nbkg.GetName())));
+   RooUniform prior_pdf("prior_nuis","nuisance prior",nuisances);
 
-  mc.Print("v");
+   // PDF is usual s+b pdf * constraint (priors)
+   RooProdPdf spdf("splusb","splusb",RooArgList(spdf_a,prior_pdf));
+   wsp->import(spdf,RooFit::RecycleConflictNodes());
 
-  RooStats::BayesianCalculator bc(*datatoy,mc);
-  bc.SetConfidenceLevel(0.683);
-  bc.SetScanOfPosterior(50);
-  bc.SetIntegrationType("MISER");
-  RooAbsReal *pdfpost =  bc.GetPosteriorFunction();
-  pdfpost->Print("vT");
+   // Model Config 
+   RooArgSet poi(*(wsp->var(mu.GetName())));
+
+   RooStats::ModelConfig mc("mc","mc",wsp);
+   mc.SetObservables(RooArgSet(*x));
+   mc.SetPdf(*(wsp->pdf(spdf.GetName())));
+   mc.SetPriorPdf(uniform_mu);
+   mc.SetNuisanceParameters(nuisances);
+   mc.SetParametersOfInterest(poi);
+   mc.SetGlobalObservables(RooArgSet());
+
+   mc.Print("v");
+
+   RooStats::BayesianCalculator bc(*datatoy,mc);
+   bc.SetConfidenceLevel(0.683);
+   bc.SetScanOfPosterior(50);
+   bc.SetIntegrationType("MISER");
+   RooAbsReal *pdfpost =  bc.GetPosteriorFunction();
+   pdfpost->Print("vT");
+   pdfpost->plotOn(plot,RooFit::LineColor(color[id]));
 //  spdf.Print("v");
+  }
 
-  RooPlot * plot = bc.GetPosteriorPlot();
+  //RooPlot * plot = bc.GetPosteriorPlot();
   TCanvas *can = new TCanvas();
   plot->Draw();
 }
