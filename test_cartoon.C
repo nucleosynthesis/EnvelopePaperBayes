@@ -127,7 +127,8 @@ void test_cartoon(){
   for (double xx = mu.getMin(); xx<=mu.getMax();xx+=gstep){
 	ip+=1;
   }
-  TH1F *tot = new TH1F("sum","",ip,mu.getMin()-gstep/2,mu.getMax()-gstep/2);
+  TH1D *tot = new TH1D("sum","",ip,mu.getMin()-gstep/2,mu.getMax()-gstep/2);
+  TH1D *cenh = new TH1D("cen","",ip,mu.getMin()-gstep/2,mu.getMax()-gstep/2);
   RooPlot *pl1 = x->frame();
  
   TCanvas *can = new TCanvas();
@@ -138,8 +139,8 @@ void test_cartoon(){
   for (int id=0;id<5;id++){
    // start someplace reasonable
    datatoy->plotOn(pl1,RooFit::Binning(80));
-   int nsigma = 5;
-   setParsRanges(bkg_pdf->getParameters(*datatoy),4);
+   int nsigma = 3;
+   setParsRanges(bkg_pdf->getParameters(*datatoy),3);
 
   std::cout<< "READY TO GO MAKING STUFF" << std::endl; 
    wsp->var("env_pdf_1_8TeV_pow1_p1")->setConstant(true);
@@ -157,6 +158,7 @@ void test_cartoon(){
 	//tot->SetPoint(i,xx,yy+gr->Eval(xx)/5);
 	std::cout<< tot->GetBinCenter(i)<< " " <<gr->Eval(tot->GetBinCenter(i))<< std::endl;
 	tot->SetBinContent(i,tot->GetBinContent(i)+gr->Eval(tot->GetBinCenter(i))/5);
+	if (id==2)cenh->SetBinContent(i,gr->Eval(cenh->GetBinCenter(i)));
    }
    
    //grs[id] = gr;
@@ -169,35 +171,51 @@ void test_cartoon(){
    mu.setVal(bestfit);
    std::cout << "nBKG = " << (wsp->var("nbkg"))->getVal() << std::endl;
    wsp->pdf(spdf_a.GetName())->plotOn(pl1,RooFit::LineColor(color[id]),RooFit::Normalization((wsp->var("nbkg"))->getVal()+nsig.getVal(),RooAbsReal::NumEvent));
-   //RooStats::BayesianCalculator bc(*datatoy,mc);
-   //bc.SetConfidenceLevel(0.683);
-   //bc.SetScanOfPosterior(50);
-   //bc.SetIntegrationType("MISER");
-   //RooAbsReal *pdfpost =  bc.GetPosteriorFunction();
-   //pdfpost->Print("vT");
-   //pdfpost->plotOn(plot,RooFit::LineColor(color[id]));
-//  spdf.Print("v");
   }
 
-  //TCanvas *can3 = new TCanvas();
+  TCanvas *can3 = new TCanvas();
   // Finaly bayescalc this guy
-  RooPlot *plot = mu.frame();
+  //RooPlot *plot = mu.frame();
   wsp->var("nbkg")->setConstant(false);
+  // fit again 
+  wsp->pdf(spdf_a.GetName())->fitTo(*datatoy);
+
   setParsRanges(&RooArgSet(*(wsp->var("nbkg"))),4);
 
   RooStats::BayesianCalculator bc(*datatoy,mc);
   bc.SetConfidenceLevel(0.683);
   bc.SetScanOfPosterior(25);
   bc.SetIntegrationType("MISER");
-  RooAbsPdf *pdfpost =  bc.GetPosteriorPdf();
-  mu.setRange("RNGE",mu.getMin(),mu.getMax());
-  pdfpost->plotOn(plot,RooFit::LineColor(kMagenta),RooFit::NormRange("RNGE"),RooFit::Normalization(1.,RooAbsReal::NumEvent));
-  plot->Draw();
-  tot->SetLineStyle(2);
+  RooAbsReal *pdfpost =  bc.GetPosteriorFunction();
+  //mu.setRange("RNGE",mu.getMin(),mu.getMax());
+  //pdfpost->plotOn(plot,RooFit::LineColor(kMagenta),RooFit::Normalization(1.,RooAbsReal::NumEvent));
+  //plot->Draw();
+  // Make the curve ourselves because RooFit SUCKS?!
+ 
+  double wd = tot->GetBinWidth(1);
+  TH1D *tot_B = (TH1D*) tot->Clone();
+
+  for (int b=1;b<=tot->GetNbinsX();b++){
+	wsp->var(mu.GetName())->setVal(tot_B->GetBinCenter(b));
+	tot_B->SetBinContent(b,pdfpost->getVal());
+  }
+  tot_B->Scale(1./(wd*tot_B->Integral()));
+  tot->Scale(1./(wd*tot->Integral()));
+  cenh->Scale(1./(wd*cenh->Integral()));
+
+  tot->GetXaxis()->SetTitle("#mu");
+  tot->GetYaxis()->SetTitle("Posterior probability density");
+
+  //tot->SetLineStyle(2);
   tot->SetLineWidth(3);
-  wd = tot->GetBinWidth(1);
-  tot->Scale(1./(tot->Integral()));
-  tot->Draw("histsame");
+  tot_B->SetLineWidth(2);
+  cenh->SetLineWidth(2);
+  tot_B->SetLineColor(kMagenta);
+  cenh->SetLineColor(kBlue);
+
+  tot->Draw("histL");
+  tot_B->Draw("histsameL");
+  cenh->Draw("histsameL");
 
   TCanvas *c = new TCanvas();
   pl1->Draw();
