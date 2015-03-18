@@ -21,7 +21,7 @@
 using namespace RooStats;
 
 
-double gstep = 0.1;
+double gstep = 0.02;
 
 void setParsRanges(RooArgSet *pars, int ns){
    TIterator *it = pars->createIterator();
@@ -78,7 +78,7 @@ void test_cartoon(){
   RooPlot *plot = mu.frame();
 
   //std::string bkgfunctions[2] = {"env_pdf_1_8TeV_pow1","env_pdf_1_8TeV_exp1"};
-  int color[5]     = {2,3,4,1,5};
+  int color[5]     = {2,2,4,2,2};
   //int bkgvalues[5] = {-4.9-10*0.1775,-4.9-5*0.1775,-4.9,-4.9+5*0.1775,-4.9+10*0.1775};  //change the slope. 
   
   RooAbsPdf *bkg_pdf = multipdf->pdf("env_pdf_1_8TeV_pow1");
@@ -163,6 +163,10 @@ void test_cartoon(){
    
    //grs[id] = gr;
 
+   if (id!=2) { 
+	gr->SetLineStyle(2);
+//	gr->SetLineColor(2);
+   }
    gr->SetLineColor(color[id]);
    if (id==0) gr->Draw("AL");
    else gr->Draw("L");
@@ -170,7 +174,8 @@ void test_cartoon(){
    //mc.Print("v");
    mu.setVal(bestfit);
    std::cout << "nBKG = " << (wsp->var("nbkg"))->getVal() << std::endl;
-   wsp->pdf(spdf_a.GetName())->plotOn(pl1,RooFit::LineColor(color[id]),RooFit::Normalization((wsp->var("nbkg"))->getVal()+nsig.getVal(),RooAbsReal::NumEvent));
+   if (id==2) wsp->pdf(spdf_a.GetName())->plotOn(pl1,RooFit::LineColor(color[id]),RooFit::Normalization((wsp->var("nbkg"))->getVal()+nsig.getVal(),RooAbsReal::NumEvent));
+   else wsp->pdf(spdf_a.GetName())->plotOn(pl1,RooFit::LineColor(color[id]),RooFit::LineStyle(2),RooFit::Normalization((wsp->var("nbkg"))->getVal()+nsig.getVal(),RooAbsReal::NumEvent));
   }
 
   TCanvas *can3 = new TCanvas();
@@ -199,6 +204,7 @@ void test_cartoon(){
 	wsp->var(mu.GetName())->setVal(tot_B->GetBinCenter(b));
 	tot_B->SetBinContent(b,pdfpost->getVal());
   }
+  tot->SetMaximum(0.12);
   tot_B->Scale(1./(wd*tot_B->Integral()));
   tot->Scale(1./(wd*tot->Integral()));
   cenh->Scale(1./(wd*cenh->Integral()));
@@ -208,12 +214,13 @@ void test_cartoon(){
 
   //tot->SetLineStyle(2);
   tot->SetLineWidth(3);
-  tot_B->SetLineWidth(2);
-  cenh->SetLineWidth(2);
+  tot_B->SetLineWidth(3);
+  cenh->SetLineWidth(3);
   tot_B->SetLineColor(kMagenta);
   cenh->SetLineColor(kBlue);
 
-  tot->Draw("histL");
+  tot->Draw("hist");
+  ///tot->Draw("histsame");
   tot_B->Draw("histsameL");
   cenh->Draw("histsameL");
 
